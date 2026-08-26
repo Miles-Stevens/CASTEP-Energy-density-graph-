@@ -1,0 +1,152 @@
+    
+import ipywidgets as widgets
+from IPython.display import display
+import subprocess
+
+from graphs.__init__ import Graph.__init__ 
+from helpers.helpers import Helpers
+
+# Enable interactive plotting
+%matplotlib widget
+
+
+class Graph(Helpers):
+        
+    def _add_plot_interactivity(self, fig, ax, scatter_points, file_names, 
+                                    densities, energies, stoichiometries, fu_labels):
+            """Fixed interactivity with correct energy labels"""
+            # Determine energy label based on configuration
+            energy_label = "Relative E"
+
+            
+            # Pre-compute hover labels with correct energy values
+            hover_labels = [
+                f"{p.name}\nρ = {d:.2f} g/cm³\n{energy_label} = {e:.4f} meV/atom\n{st} | {fu} FU"
+                for p, d, e, st, fu in zip(file_names, densities, energies, 
+                                        stoichiometries, fu_labels)
+            ]
+            
+            annot = ax.annotate("", xy=(0, 0), xytext=(-40, 10), 
+                            textcoords="offset points",
+                            bbox=dict(boxstyle="round", fc="w", alpha=0.9),
+                            arrowprops=dict(arrowstyle="->"))
+            annot.set_visible(False)
+
+            def on_motion(event):
+                if event.inaxes == ax:
+                    found_point = False
+                    for sc, idxs in scatter_points:
+                        cont, ind = sc.contains(event)
+                        if cont:
+                            global_idx = idxs[ind['ind'][0]]
+                            update_annot({'ind': [global_idx]})
+                            annot.set_visible(True)
+                            fig.canvas.draw_idle()
+                            found_point = True
+                            break
+                    
+                    if not found_point and annot.get_visible():
+                        annot.set_visible(False)
+                        fig.canvas.draw_idle()
+                else:
+                    if annot.get_visible():
+                        annot.set_visible(False)
+                        fig.canvas.draw_idle()
+
+
+            def update_annot(ind):
+                idx = ind["ind"][0]
+                annot.xy = (densities[idx], energies[idx])
+                annot.set_text(hover_labels[idx])
+
+            
+            fig.canvas.mpl_connect("motion_notify_event", on_motion)
+            
+            # Add other interactive features
+            self._add_search_widget(fig, ax, densities, energies, stoichiometries, file_names)
+            self._add_vesta_functionality(fig, ax, scatter_points, file_names)
+
+       
+    def _add_search_widget(self, fig, ax, densities, energies, stoichiometries, file_names):
+        """Add search widget functionality"""
+        search_box = widgets.Text(
+            value='',
+            placeholder='Enter filename or stoichiometry',
+            description='Search:',
+            disabled=False
+        )
+        display(search_box)
+        
+        highlight_scatter = [None]
+        
+        def search_and_highlight(change):
+            term = change['new'].strip().lower()
+            if highlight_scatter[0]:
+                highlight_scatter[0].remove()
+                highlight_scatter[0] = None
+            
+            if not term:
+                fig.canvas.draw_idle()
+                return
+            
+            # More efficient search
+            matches = []
+            
+            # First try exact stoichiometry match
+            for i, stoich in enumerate(stoichiometries):
+                if term == stoich.lower():
+                    matches.append(i)
+            
+            if matches:
+                x = densities[matches]
+                y = energies[matches]
+                highlight_scatter[0] = ax.scatter(
+                    x, y, s=200, facecolors='none',
+                    edgecolors='orange', linewidths=2, label='Search Result'
+                )
+                fig.canvas.draw_idle()
+            else: # If no exact matches, try partial matches
+                for i, (fname, stoich) in enumerate(zip(file_names, stoichiometries)):
+                    if term in str(fname).lower() or term in stoich.lower():
+                        matches.append(i)
+        
+        search_box.observe(search_and_highlight, names='value')
+    
+    def _add_vesta_functionality(self, fig, ax, scatter_points, file_names):
+        """Add double-click to open in VESTA functionality"""
+        def on_click(event):
+            if event.inaxes != ax or not event.dblclick:
+                return
+            
+            for sc, idxs in scatter_points:
+                contains, attr = sc.contains(event)
+                if contains:
+                    ind = attr['ind'][0]
+                    global_idx = idxs[ind]
+                    
+                    # Try both .cif and -out.cif files
+                    cif_path = file_names[global_idx].with_suffix('.cif')
+                    out_cif_path = file_names[global_idx].with_name(
+                        file_names[global_idx].stem + '-out.cif'
+                    )
+                    
+                    # Check which CIF file exists
+                    if out_cif_path.exists():
+                        target_cif = out_cif_path
+                    elif cif_path.exists():
+                        target_cif = cif_path
+                    else:
+                        print(f"No CIF file found for {file_names[global_idx]}")
+                        return
+                    
+                    try:
+                        subprocess.Popen([self.vesta_path, str(target_cif)])
+                        print(f"Opened {target_cif} in VESTA")
+                    except FileNotFoundError:
+                        print(f"VESTA executable not found at: {self.vesta_path}")
+                        print("Please check the VESTA path in the configuration.")
+                    except Exception as e:
+                        print(f"Error opening VESTA: {e}")
+                    return
+        
+        fig.canvas.mpl_connect('button_press_event', on_click)

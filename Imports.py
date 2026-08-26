@@ -1,5 +1,5 @@
-# this will hae all the needed imports for all the files 
 
+# these are the 3rd party libaries that are used in the program # I want to decrease these
 import warnings
 import os
 import time
@@ -20,14 +20,13 @@ import ipywidgets as widgets
 from IPython.display import display
 
 # Scientific computing imports
-from pymatgen.io.ase import AseAtomsAdaptor
-from pymatgen.io.cif import CifWriter
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+
 from ase import io, Atoms
 from io import StringIO
 from ase.neighborlist import neighbor_list
-from ase.io import read
+from ase.io import read as ase_write
 from ase.data import atomic_masses
 from ase.data import atomic_numbers
 from ase.geometry import cellpar_to_cell
 from ase.geometry import distance
+
